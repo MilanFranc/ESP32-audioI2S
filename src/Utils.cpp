@@ -42,7 +42,7 @@ bool endsWith (const char* base, const char* str) {
     return (strncmp(p, str, slen) == 0);
 }
 
-int indexOf (const char* base, const char* str, int startIndex) {
+int indexOf(const char* base, const char* str, int startIndex) {
 //fb
     const char *p = base;
     for (; startIndex > 0; startIndex--)

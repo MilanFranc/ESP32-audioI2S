@@ -33,7 +33,8 @@
 
 #include "AudioBuffer.h"
 #include "AudioFilter.h"
-
+#include "AudioPlaylist.h"
+#include "MetaDataDecoder.h"
 
 #ifdef SDFATFS_USED
 //typedef File32 File;
@@ -141,14 +142,13 @@ public:
                  CODEC_OGG_FLAC, CODEC_OGG_OPUS};
 
 private:
-    void httpPrint(const char* url);
+    void httpRequest(const char* url);
     void setDefaults(); // free buffers and set defaults
     void initInBuff();
 #ifndef AUDIO_NO_SD_FS
     void processLocalFile();
 #endif // AUDIO_NO_SD_FS
     void processWebStream();
-    void processPlayListData();
     void processM3U8entries(uint8_t nrOfEntries = 0, uint32_t seqNr = 0, uint8_t pos = 0, uint16_t targetDuration = 0);
     bool STfromEXTINF(char* str);
     void showCodecParams();
@@ -174,7 +174,7 @@ private:
     void showstreamtitle(const char* ml);
     bool parseContentType(const char* ct);
     void processAudioHeaderData();
-    bool readMetadata(uint8_t b, bool first = false);
+    //bool readMetadata(uint8_t b, bool first = false);
     esp_err_t I2Sstart(uint8_t i2s_num);
     esp_err_t I2Sstop(uint8_t i2s_num);
     inline void setDatamode(uint8_t dm) { m_datamode = dm; }
@@ -186,8 +186,13 @@ private:
     enum : int { APLL_AUTO = -1, APLL_ENABLE = 1, APLL_DISABLE = 0 };
     enum : int { EXTERNAL_I2S = 0, INTERNAL_DAC = 1, INTERNAL_PDM = 2 };
     enum : int { FORMAT_NONE = 0, FORMAT_M3U = 1, FORMAT_PLS = 2, FORMAT_ASX = 3, FORMAT_M3U8 = 4};
-    enum : int { AUDIO_NONE, AUDIO_HEADER, AUDIO_DATA,
-                 AUDIO_PLAYLISTINIT, AUDIO_PLAYLISTHEADER,  AUDIO_PLAYLISTDATA};
+    enum : int { AUDIO_NONE, 
+                 AUDIO_HEADER,
+                 AUDIO_DATA,
+                 AUDIO_PLAYLISTINIT,
+                 AUDIO_PLAYLISTHEADER,
+                 AUDIO_PLAYLISTDATA
+                };
     enum : int { FLAC_BEGIN = 0, FLAC_MAGIC = 1, FLAC_MBH =2, FLAC_SINFO = 3, FLAC_PADDING = 4, FLAC_APP = 5,
                  FLAC_SEEK = 6, FLAC_VORBIS = 7, FLAC_CUESHEET = 8, FLAC_PICTURE = 9, FLAC_OKAY = 100};
     enum : int { M4A_BEGIN = 0, M4A_FTYP = 1, M4A_CHK = 2, M4A_MOOV = 3, M4A_FREE = 4, M4A_TRAK = 5, M4A_MDAT = 6,
@@ -289,6 +294,8 @@ private:
     int8_t          m_gain2 = 0;
 
     AudioFilter     m_filter;
+    AudioPlaylist   m_playlist;
+    MetaDataDecoder m_metaDecoder;
 
 };
 
