@@ -32,6 +32,7 @@
 #endif // SDFATFS_USED
 
 #include "AudioBuffer.h"
+#include "AudioFilter.h"
 
 
 #ifdef SDFATFS_USED
@@ -176,14 +177,9 @@ private:
     bool readMetadata(uint8_t b, bool first = false);
     esp_err_t I2Sstart(uint8_t i2s_num);
     esp_err_t I2Sstop(uint8_t i2s_num);
-    void urlencode(char* buff, uint16_t buffLen, bool spacesOnly = false);
-    int16_t* IIR_filterChain0(int16_t iir_in[2], bool clear = false);
-    int16_t* IIR_filterChain1(int16_t* iir_in, bool clear = false);
-    int16_t* IIR_filterChain2(int16_t* iir_in, bool clear = false);
     inline void setDatamode(uint8_t dm) { m_datamode = dm; }
     inline uint8_t getDatamode() { return m_datamode; }
     inline uint32_t streamavail() { return _client ? _client->available() : 0; }
-    void IIR_calculateCoefficients(int8_t G1, int8_t G2, int8_t G3);
 
 
 private:
@@ -198,18 +194,10 @@ private:
                  M4A_ILST = 7, M4A_MP4A = 8, M4A_AMRDY = 99, M4A_OKAY = 100};
     enum : int { OGG_BEGIN = 0, OGG_MAGIC = 1, OGG_HEADER = 2, OGG_FIRST = 3, OGG_AMRDY = 99, OGG_OKAY = 100};
     typedef enum { LEFTCHANNEL=0, RIGHTCHANNEL=1 } SampleIndex;
-    typedef enum { LOWSHELF = 0, PEAKEQ = 1, HIFGSHELF =2 } FilterType;
 
     const uint8_t volumetable[22]={   0,  1,  2,  3,  4 , 6 , 8, 10, 12, 14, 17,
                                      20, 23, 27, 30 ,34, 38, 43 ,48, 52, 58, 64}; //22 elements
 
-    typedef struct _filter{
-        float a0;
-        float a1;
-        float a2;
-        float b1;
-        float b2;
-    } filter_t;
 
 #ifndef AUDIO_NO_SD_FS
     File              audiofile;    // @suppress("Abstract class cannot be instantiated")
@@ -229,7 +217,7 @@ private:
     char            m_lastHost[512];                // Store the last URL to a webstream
     char*           m_playlistBuff = NULL;          // stores playlistdata
     const uint16_t  m_plsBuffEntryLen = 256;        // length of each entry in playlistBuff
-    filter_t        m_filter[3];                    // digital filters
+
     int             m_LFcount = 0;                  // Detection of end of header
     uint32_t        m_sampleRate=16000;
     uint32_t        m_bitRate=0;                    // current bitrate given fom decoder
@@ -293,13 +281,15 @@ private:
     float           m_audioCurrentTime = 0;
     uint32_t        m_audioDataStart = 0;           // in bytes
     size_t          m_audioDataSize = 0;            //
-    float           m_filterBuff[3][2][2][2];       // IIR filters memory for Audio DSP
     size_t          m_i2s_bytesWritten = 0;         // set in i2s_write() but not used
     size_t          m_file_size = 0;                // size of the file
     uint16_t        m_filterFrequency[2];
     int8_t          m_gain0 = 0;                    // cut or boost filters (EQ)
     int8_t          m_gain1 = 0;
     int8_t          m_gain2 = 0;
+
+    AudioFilter     m_filter;
+
 };
 
 //----------------------------------------------------------------------------------------------------------------------

@@ -17,6 +17,7 @@ int specialIndexOf (uint8_t* base, const char* str, int baselen, bool exact = fa
 size_t bigEndian(uint8_t* base, uint8_t numBytes, uint8_t shiftLeft = 8);
 bool b64encode(const char* source, uint16_t sourceLength, char* dest);
 size_t urlencode_expected_len(const char* source);
+void urlencode(char* buff, uint16_t buffLen, bool spacesOnly = false);
 
 void unicode2utf8(char* buff, uint32_t len);
 bool latinToUTF8(char* buff, size_t bufflen);
