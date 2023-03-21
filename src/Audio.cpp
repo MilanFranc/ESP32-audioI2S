@@ -6,17 +6,23 @@
  *      Author: Wolle (schreibfaul1)
  *
  */
+
+#define AUDIO_NO_SPEECH_ENGINE
+#define AUDIO_NO_SD_FS
+
 #include "Audio.h"
 #include "mp3_decoder/mp3_decoder.h"
 #include "aac_decoder/aac_decoder.h"
 #include "flac_decoder/flac_decoder.h"
 #include "Utils.h"
+#include "UrlParser.h"
 
 #ifndef AUDIO_NO_SD_FS
 #ifdef SDFATFS_USED
 fs::SDFATFS SD_SDFAT;
 #endif
 #endif // AUDIO_NO_SD_FS
+
 
 /* wrapper for common pattern:
  *  if(audio_info) {
@@ -59,8 +65,7 @@ Audio::Audio(bool internalDAC /* = false */, uint8_t channelEnabled /* = I2S_DAC
 
     if (internalDAC)  {
 
-        #ifdef CONFIG_IDF_TARGET_ESP32
-
+#ifdef CONFIG_IDF_TARGET_ESP32
             log_i("internal DAC");
             m_i2s_config.mode             = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN );
 
@@ -75,8 +80,7 @@ Audio::Audio(bool internalDAC /* = false */, uint8_t channelEnabled /* = I2S_DAC
             if(m_f_channelEnabled != I2S_DAC_CHANNEL_BOTH_EN) {
                 m_f_forceMono = true;
             }
-
-        #endif
+#endif
 
     }
     else {
@@ -96,7 +100,7 @@ Audio::Audio(bool internalDAC /* = false */, uint8_t channelEnabled /* = I2S_DAC
 }
 //---------------------------------------------------------------------------------------------------------------------
 void Audio::setBufsize(int rambuf_sz, int psrambuf_sz) {
-    if(InBuff.isInitialized()) {
+    if (InBuff.isInitialized()) {
         log_e("Audio::setBufsize must not be called after audio is initialized");
         return;
     }
@@ -104,7 +108,7 @@ void Audio::setBufsize(int rambuf_sz, int psrambuf_sz) {
 };
 
 void Audio::initInBuff() {
-    if(!InBuff.isInitialized()) {
+    if (!InBuff.isInitialized()) {
         size_t size = InBuff.init();
         if (size > 0) {
             AUDIO_INFO(sprintf(chbuf, "PSRAM %sfound, inputBufferSize: %u bytes", InBuff.havePSRAM()?"":"not ", size - 1);)
@@ -130,8 +134,8 @@ esp_err_t Audio::i2s_mclk_pin_select(const uint8_t pin) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    #ifdef CONFIG_IDF_TARGET_ESP32
-        switch(pin){
+#ifdef CONFIG_IDF_TARGET_ESP32
+        switch(pin) {
             case 0:
                 PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO0_U, FUNC_GPIO0_CLK_OUT1);
                 WRITE_PERI_REG(PIN_CTRL, 0xFFF0);
@@ -147,7 +151,7 @@ esp_err_t Audio::i2s_mclk_pin_select(const uint8_t pin) {
             default:
                 break;
         }
-    #endif
+#endif
 
     return ESP_OK;
 }
@@ -286,28 +290,26 @@ void Audio::setConnectionTimeout(uint16_t timeout_ms, uint16_t timeout_ms_ssl) {
 bool Audio::connecttohost(const char* host, const char* user, const char* pwd) {
     // user and pwd for authentification only, can be empty
 
-    char* l_host = NULL; // local copy of host
-    char* h_host = NULL; // pointer of l_host without http:// or https://
-
-
-    if (strlen(host) == 0) {
-        if(audio_info) audio_info("Hostaddress is empty");
-        return false;
-    }
-
     if (strlen(host) >= 512 - 10) {
         if(audio_info) audio_info("Hostaddress is too long");
         return false;
     }
 
-    if (!utils::startsWith(host, "http")) {
-        if(audio_info) audio_info("Hostaddress doesnt contain http");
+    UrlParser urlParse;
+    if (!urlParse.parse(host)) {
+        audio_info("Hostaddress parsing error!");
         return false;
     }
+    // Serial.print("proto:");
+    // Serial.println(urlParse.protocol());
+    // Serial.print("host:");
+    // Serial.println(urlParse.host());
+    // Serial.print("port:");
+    // Serial.println(urlParse.port());
+    // Serial.print("path:");
+    // Serial.println(urlParse.path());
 
-    l_host = strdup(host);    ///
-    utils::trim(l_host);
-
+#if 0
     int p = utils::indexOf(l_host, "http", 0);
     if (p > 0) {
         if(audio_info) audio_info("Hostaddress is wrong");
@@ -322,20 +324,22 @@ bool Audio::connecttohost(const char* host, const char* user, const char* pwd) {
         // free(l_host);
         // l_host = newHost;
     }
+#endif    
 
     setDefaults();
 
-    AUDIO_INFO(sprintf(chbuf, "Connect to new host: \"%s\"", l_host);)
+    AUDIO_INFO(sprintf(chbuf, "Connect to new host: \"%s\"", urlParse.host().c_str());)
 
     // authentification
-    uint8_t auth = strlen(user) + strlen(pwd);
-    char toEncode[auth + 4];
-    strcpy(toEncode, user);
-    strcat(toEncode, ":");
-    strcat(toEncode, pwd);
-    char authorization[base64_encode_expected_len(strlen(toEncode)) + 1];
-    authorization[0] = '\0';
-    utils::b64encode((const char*)toEncode, strlen(toEncode), authorization);
+    char* authorization = NULL;
+    uint8_t authLen = strlen(user) + strlen(pwd);
+    if (authLen > 0) {
+        char toEncode[authLen + 4];
+        strcpy(toEncode, user);
+        strcat(toEncode, ":");
+        strcat(toEncode, pwd);
+        authorization = utils::b64encode((const char*)toEncode, strlen(toEncode));
+    }
 
     // initializationsequence
     int16_t pos_slash;                                        // position of "/" in hostname
@@ -345,18 +349,28 @@ bool Audio::connecttohost(const char* host, const char* user, const char* pwd) {
     m_f_webstream = true;
     setDatamode(AUDIO_HEADER);                                // Handle header
 
-    h_host = l_host;
-
-    if (utils::startsWith(l_host, "http://")) {
-        h_host += 7;
+    if (urlParse.protocol() == "http") {
         m_f_ssl = false;
         _client = static_cast<WiFiClient*>(&client);
     }
+    else if (urlParse.protocol() == "https") {
+        m_f_ssl = true;
+        _client = static_cast<WiFiClient*>(&clientsecure);
+    }
+
+    if (urlParse.port().length() > 0) {
+        port = urlParse.port().toInt();
+    }
+    else { //port is empty
+        port = (m_f_ssl) ? 443 : 80;
+    }
+
+#if 0
+    if (utils::startsWith(l_host, "http://")) {
+        h_host += 7;
+    }
     else if (utils::startsWith(l_host, "https://")) {
         h_host += 8;
-        m_f_ssl = true;
-        port = 443;
-        _client = static_cast<WiFiClient*>(&clientsecure);
     }
 
     // Is it a playlist?
@@ -388,50 +402,57 @@ bool Audio::connecttohost(const char* host, const char* user, const char* pwd) {
         utils::trim(extension);
         utils::urlencode(extension, extLen, true);
     }
-    else{  // url has no extension
+    else {  // url has no extension
         hostwoext = strdup(h_host);
         extension = strdup("/");
     }
 
-    if((pos_colon >= 0) && ((pos_ampersand == -1) or (pos_ampersand > pos_colon))){
+    if ((pos_colon >= 0) && ((pos_ampersand == -1) or (pos_ampersand > pos_colon))) {
         port = atoi(h_host + pos_colon + 1);// Get portnumber as integer
         hostwoext[pos_colon] = '\0';// Host without portnumber
     }
+#endif
 
-    AUDIO_INFO(sprintf(chbuf, "Connect to \"%s\" on port %d, extension \"%s\"", hostwoext, port, extension);)
+    AUDIO_INFO(sprintf(chbuf, "Connect to \"%s\" on port %d, extension \"%s\"", urlParse.host().c_str(), port, urlParse.path().c_str());)
 
-    char resp[strlen(h_host) + strlen(authorization) + 100];
-    strcpy(resp, "GET ");
-    strcat(resp, extension);
-    strcat(resp, " HTTP/1.0\r\n");
-    strcat(resp, "Host: ");
-    strcat(resp, hostwoext);
-    strcat(resp, "\r\n");
-    strcat(resp, "Icy-MetaData:1\r\n");
-    strcat(resp, "Authorization: Basic ");
-    strcat(resp, authorization);
-    strcat(resp, "\r\n");
-    strcat(resp, "User-Agent: Mozilla/5.0\r\n");
-//    strcat(resp, "Accept-Encoding: gzip;q=0\r\n");  // otherwise the server assumes gzip compression
-//    strcat(resp, "Transfer-Encoding: \r\n");        // otherwise the server assumes gzip compression
-    strcat(resp, "Connection: keep-alive\r\n\r\n");
+    String httpRequest;
+    uint16_t authorizationLen = authorization != NULL ? strlen(authorization) : 0;
+    httpRequest.reserve(urlParse.host().length() + authorizationLen + 100);
+
+    httpRequest += "GET ";
+    httpRequest += urlParse.path();
+    httpRequest += " HTTP/1.0\r\n";
+    httpRequest += "Host: ";
+    httpRequest += urlParse.host();
+    httpRequest += "\r\n";
+    httpRequest += "Icy-MetaData:1\r\n";
+    if (authorization != NULL) {
+        httpRequest += "Authorization: Basic ";
+        httpRequest += authorization;
+        httpRequest += "\r\n";
+    }
+    httpRequest += "User-Agent: Mozilla/5.0\r\n";
+    httpRequest += "Connection: keep-alive\r\n";
+    httpRequest += "\r\n";
+
+    if (authorization != NULL) { free(authorization); authorization = NULL; } 
 
     bool result = false;
     uint32_t t = millis();
 
     //NOTE: maybe reconnect ??
-    if (_client->connect(hostwoext, port, m_f_ssl ? m_timeout_ms_ssl : m_timeout_ms)) {
+    if (_client->connect(urlParse.host().c_str(), port, m_f_ssl ? m_timeout_ms_ssl : m_timeout_ms)) {
         if (!m_f_ssl) _client->setNoDelay(true);
         // if(audio_info) audio_info("SSL/TLS Connected to server");
-        _client->print(resp);
+        _client->print(httpRequest);
         uint32_t dt = millis() - t;
         AUDIO_INFO(sprintf(chbuf, "%s has been established in %u ms, free Heap: %u bytes", m_f_ssl?"SSL":"Connection", dt, ESP.getFreeHeap());)
-        strcpy(m_lastHost, l_host);
+        strcpy(m_lastHost, urlParse.host().c_str());
         m_f_running = result = true;
         while (!_client->connected()) {; } // wait until the connection is established
     }
     else {
-        AUDIO_INFO(sprintf(chbuf, "Request %s failed!", l_host); )
+        AUDIO_INFO(sprintf(chbuf, "Request %s failed!", urlParse.host().c_str()); )
         if (audio_showstation) audio_showstation("");
         if (audio_showstreamtitle) audio_showstreamtitle("");
         if (audio_icydescription) audio_icydescription("");
@@ -440,9 +461,6 @@ bool Audio::connecttohost(const char* host, const char* user, const char* pwd) {
         m_lastHost[0] = 0;
         m_f_running = false;
     }
-    if (hostwoext) { free(hostwoext); hostwoext = NULL; }
-    if (extension) { free(extension); extension = NULL; }
-    if (l_host   ) { free(l_host);    l_host    = NULL; }
 
     return result;
 }
@@ -460,7 +478,7 @@ bool Audio::connecttoSD(const char* path, uint32_t resumeFilePos) {
 //---------------------------------------------------------------------------------------------------------------------
 bool Audio::connecttoFS(fs::FS &fs, const char* path, uint32_t resumeFilePos) {
 
-    if(strlen(path)>255) return false;
+    if (strlen(path)>255) return false;
 
     m_resumeFilePos = resumeFilePos;
     char audioName[256];
@@ -570,6 +588,8 @@ bool Audio::connecttoFS(fs::FS &fs, const char* path, uint32_t resumeFilePos) {
     return false;
 }
 #endif // AUDIO_NO_SD_FS
+
+#ifndef AUDIO_NO_SPEECH_ENGINE
 //---------------------------------------------------------------------------------------------------------------------
 bool Audio::connecttospeech(const char* speech, const char* lang) {
 
@@ -618,6 +638,7 @@ bool Audio::connecttospeech(const char* speech, const char* lang) {
 
     return true;
 }
+#endif  //AUDIO_NO_SPEECH_ENGINE
 
 //---------------------------------------------------------------------------------------------------------------------
 void Audio::showID3Tag(const char* tag, const char* value) {
@@ -1827,7 +1848,7 @@ bool Audio::playChunk() {
     int16_t sample[2];
     if(getBitsPerSample() == 8) {
         if(getChannels() == 1) {
-            while(m_validSamples) {
+            while(m_validSamples > 0) {
                 uint8_t x =  m_outBuff[m_curSample] & 0x00FF;
                 uint8_t y = (m_outBuff[m_curSample] & 0xFF00) >> 8;
                 sample[LEFTCHANNEL]  = x;
@@ -1845,7 +1866,7 @@ bool Audio::playChunk() {
             }
         }
         else if(getChannels() == 2) {
-            while(m_validSamples) {
+            while(m_validSamples > 0) {
                 uint8_t x =  m_outBuff[m_curSample] & 0x00FF;
                 uint8_t y = (m_outBuff[m_curSample] & 0xFF00) >> 8;
                 if(!m_f_forceMono) { // stereo mode
@@ -1870,7 +1891,7 @@ bool Audio::playChunk() {
     }
     else if(getBitsPerSample() == 16) {
         if(getChannels() == 1) {
-            while(m_validSamples) {
+            while(m_validSamples > 0) {
                 sample[LEFTCHANNEL]  = m_outBuff[m_curSample];
                 sample[RIGHTCHANNEL] = m_outBuff[m_curSample];
                 if(!playSample(sample)) {
@@ -1881,7 +1902,7 @@ bool Audio::playChunk() {
             }
         }
         else if(getChannels() == 2) {
-            while(m_validSamples) {
+            while(m_validSamples > 0) {
                 if(!m_f_forceMono) { // stereo mode
                     sample[LEFTCHANNEL]  = m_outBuff[m_curSample * 2];
                     sample[RIGHTCHANNEL] = m_outBuff[m_curSample * 2 + 1];
@@ -1949,7 +1970,7 @@ void Audio::loop() {
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-void Audio::processM3U8entries(uint8_t _nrOfEntries, uint32_t _seqNr, uint8_t _seqNrpos, uint16_t _targetDuration){
+void Audio::processM3U8entries(uint8_t _nrOfEntries, uint32_t _seqNr, uint8_t _seqNrpos, uint16_t _targetDuration) {
 
     // call up the entries in m3u8 sequentially, after the last we need a new playlist
     static uint8_t  nrOfEntries = 0;
@@ -1964,7 +1985,7 @@ void Audio::processM3U8entries(uint8_t _nrOfEntries, uint32_t _seqNr, uint8_t _s
     char* extension = NULL; // e.g  hls.m3u8?rj-ttl=5&rj-tok=AAABe9D0_W0AmLAedXo_MfNpLw
     char* entryaddr = NULL;
 
-     if(!m_f_m3u8data){
+     if (!m_f_m3u8data) {
         m_f_m3u8data = true;
         nrOfEntries = _nrOfEntries;
         currentSeqNr = _seqNr;
@@ -2282,13 +2303,13 @@ void Audio::processWebStream() {
         static uint32_t t = 0;
         static uint32_t t0 = 0;
         static uint16_t avb[10];
-        if(!i) t = millis();
+        if (!i) t = millis();
         avb[i] = availableBytes;
-        if(!avb[i]){if(!t0) t0 = millis();}
-        else{if(t0 && (millis() - t0) > 400) log_d("\033[31m%dms no data received", millis() - t0); t0 = 0;}
+        if (!avb[i]) { if(!t0) t0 = millis(); }
+        else { if(t0 && (millis() - t0) > 400) log_d("\033[31m%dms no data received", millis() - t0); t0 = 0; }
         i++;
-        if(i == 10) i = 0;
-        if(!i){
+        if (i == 10) i = 0;
+        if (!i) {
             log_d("bytes available, 10 polls in %dms  %d, %d, %d, %d, %d, %d, %d, %d, %d, %d", millis() - t,
                    avb[0], avb[1], avb[2], avb[3], avb[4], avb[5], avb[6], avb[7], avb[8], avb[9]);
         }
@@ -2318,7 +2339,7 @@ void Audio::processWebStream() {
     }
 
     // if we have metadata: get them - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    if(!metacount && !m_f_swm && availableBytes) {
+    if (!metacount && !m_f_swm && availableBytes) {
         int16_t b = 0;
         b = _client->read();
         if(b >= 0) {
@@ -2342,8 +2363,9 @@ void Audio::processWebStream() {
     // if the buffer can't filled for several seconds try a new connection  - - - - - - - - - - - - - - - - - - - - - -
     if (f_stream && !availableBytes) {
         loopCnt++;
-        if(loopCnt > 200000) {              // wait several seconds
+        if (loopCnt > 200000) {              // wait several seconds
             loopCnt = 0;
+
             if(audio_info) audio_info("Stream lost -> try new connection");
             connecttohost(m_lastHost);
         }
@@ -2371,16 +2393,16 @@ void Audio::processWebStream() {
         bytesAddedToBuffer = _client->read(InBuff.getWritePtr(), bytesCanBeWritten);
 
         if (bytesAddedToBuffer > 0) {
-            if(m_f_webfile)             byteCounter  += bytesAddedToBuffer;  // Pull request #42
-            if(!m_f_swm)                metacount  -= bytesAddedToBuffer;
-            if(m_f_chunked)             m_chunkcount -= bytesAddedToBuffer;
+            if (m_f_webfile)             byteCounter  += bytesAddedToBuffer;  // Pull request #42
+            if (!m_f_swm)                metacount  -= bytesAddedToBuffer;
+            if (m_f_chunked)             m_chunkcount -= bytesAddedToBuffer;
             InBuff.bytesWritten(bytesAddedToBuffer);
         }
 
         if (InBuff.bufferFilled() > maxFrameSize && !f_stream) {  // waiting for buffer filled
             f_stream = true;  // ready to play the audio data
             uint16_t filltime = millis() - m_t0;
-            if(audio_info) audio_info("stream ready");
+            if (audio_info) audio_info("stream ready");
             AUDIO_INFO(sprintf(chbuf, "buffer filled in %d ms", filltime);)
         }
         if (!f_stream) return;
@@ -2397,18 +2419,18 @@ void Audio::processWebStream() {
         }
         else if (m_codec == CODEC_MP3) {
             int res = read_MP3_Header(InBuff.getReadPtr(), InBuff.bufferFilled());
-            if(res >= 0) bytesDecoded = res;
-            else{m_controlCounter = 100;} // error, skip header
+            if (res >= 0) bytesDecoded = res;
+            else {m_controlCounter = 100; } // error, skip header
         }
         else if (m_codec == CODEC_M4A) {
             int res = read_M4A_Header(InBuff.getReadPtr(), InBuff.bufferFilled());
-            if(res >= 0) bytesDecoded = res;
-            else{stopSong(); return;}
+            if (res >= 0) bytesDecoded = res;
+            else { stopSong(); return; }
         }
         else if (m_codec == CODEC_FLAC) {
             int res = read_FLAC_Header(InBuff.getReadPtr(), InBuff.bufferFilled());
-            if(res >= 0) bytesDecoded = res;
-            else{stopSong(); return;} // error, skip header
+            if (res >= 0) bytesDecoded = res;
+            else { stopSong(); return; } // error, skip header
         }
         else if (m_codec == CODEC_AAC) { // aac has no header
             m_controlCounter = 100;
@@ -2779,6 +2801,7 @@ bool Audio::parseContentType(const char* ct) {
     return ct_seen;
 }
 //---------------------------------------------------------------------------------------------------------------------
+#if 0
 void Audio::showstreamtitle(const char* ml) {
     // example for ml:
     // StreamTitle='Oliver Frank - Mega Hitmix';StreamUrl='www.radio-welle-woerthersee.at';
@@ -2841,6 +2864,8 @@ void Audio::showstreamtitle(const char* ml) {
         }
     }
 }
+#endif
+
 //---------------------------------------------------------------------------------------------------------------------
 void Audio::showCodecParams() {
     // print Codec Parameter (mp3, aac) in audio_info()
@@ -2862,7 +2887,7 @@ void Audio::showCodecParams() {
         if (m_codec == CODEC_AAC || m_codec == CODEC_M4A){
             uint8_t answ;
             if ((answ = AACGetFormat()) < 4) {
-                const char hf[4][8] = {"unknown", "ADTS", "ADIF", "RAW"};
+                const char hf[4][8] = { "unknown", "ADTS", "ADIF", "RAW" };
                 sprintf(chbuf, "AAC HeaderFormat: %s", hf[answ]);
                 audio_info(chbuf);
             }
@@ -2920,8 +2945,8 @@ int Audio::findNextSync(uint8_t* data, size_t len) {
              swnf++; // syncword not found counter, can be multimediadata
          }
      }
-     if (nextSync == 0){
-         if(audio_info && swnf>0){
+     if (nextSync == 0) {
+         if (audio_info && swnf > 0) {
              sprintf(chbuf, "syncword not found %i times", swnf);
              audio_info(chbuf);
              swnf = 0;
@@ -2940,7 +2965,7 @@ int Audio::sendBytes(uint8_t* data, size_t len) {
     int bytesLeft;
     static bool f_setDecodeParamsOnce = true;
     int nextSync = 0;
-    if(!m_f_playing) {
+    if (!m_f_playing) {
         f_setDecodeParamsOnce = true;
         nextSync = findNextSync(data, len);
         if(nextSync == 0) { m_f_playing = true;}
@@ -2950,7 +2975,7 @@ int Audio::sendBytes(uint8_t* data, size_t len) {
     bytesLeft = len;
     int ret = 0;
     int bytesDecoded = 0;
-    if(m_codec == CODEC_WAV){ //copy len data in outbuff and set validsamples and bytesdecoded=len
+    if(m_codec == CODEC_WAV) { //copy len data in outbuff and set validsamples and bytesdecoded=len
         memmove(m_outBuff, data , len);
         if(getBitsPerSample() == 16) m_validSamples = len / (2 * getChannels());
         if(getBitsPerSample() == 8 ) m_validSamples = len / 2;
@@ -3014,13 +3039,13 @@ int Audio::sendBytes(uint8_t* data, size_t len) {
             }
             showCodecParams();
         }
-        if (m_codec == CODEC_MP3){
+        if (m_codec == CODEC_MP3) {
             m_validSamples = MP3GetOutputSamps() / getChannels();
         }
-        if ((m_codec == CODEC_AAC) || (m_codec == CODEC_M4A)){
+        if ((m_codec == CODEC_AAC) || (m_codec == CODEC_M4A)) {
             m_validSamples = AACGetOutputSamps() / getChannels();
         }
-        if ((m_codec == CODEC_FLAC) || (m_codec == CODEC_OGG_FLAC)){
+        if ((m_codec == CODEC_FLAC) || (m_codec == CODEC_OGG_FLAC)) {
             m_validSamples = FLACGetOutputSamps() / getChannels();
         }
     }

@@ -10,8 +10,8 @@ public:
     bool addData(uint8_t b);
 
 private:
-    uint16_t m_pos_ml;                          // determines the current position in metaline
-    uint16_t m_metalen;
+    uint16_t m_index;                          // determines the current position in metaline
+    uint16_t m_datalen;
     bool m_f_swm = false;
 
     char  m_buffer[512];

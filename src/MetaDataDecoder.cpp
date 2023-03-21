@@ -8,35 +8,47 @@ MetaDataDecoder::MetaDataDecoder()
 
 void MetaDataDecoder::reset()
 {
-    m_pos_ml = 0;
-    m_metalen = 0;
+    m_index = 0;
+    m_datalen = 0;
+    Serial.println("Meta: reset.");
 }
 
 bool MetaDataDecoder::addData(uint8_t b)
 {
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    if (!m_metalen) {                                       // First byte of metadata?
-        m_metalen = b * 16 + 1;                            // New count for metadata including length byte
-        Serial.print("Meta: length=");
-        Serial.println(String(m_metalen));
+    if (m_datalen == 0) {                                  // First byte of metadata?
+        if (b == 0) {
+            return true;
+        }
 
-        if (m_metalen > 512) {
+        Serial.println("Meta: byte:" + String(b, HEX));
+
+        m_datalen = b * 16 + 1;                            // New count for metadata including length byte
+        //Serial.print("Meta: length=");
+        //Serial.println(String(m_metalen));
+
+        if (m_datalen > 512) {
             //  if(audio_info) audio_info("Metadata block to long! Skipping all Metadata from now on.");
             m_f_swm = true;                              // expect stream without metadata
         }
-        m_pos_ml = 0; m_buffer[m_pos_ml] = 0;                   // Prepare for new line
+        m_index = 0; m_buffer[m_index] = 0;                   // Prepare for new line
     }
     else {
-        m_buffer[m_pos_ml] = (char) b;                        // Put new char in +++++
-        if (m_pos_ml < 510) m_pos_ml++;
-        m_buffer[m_pos_ml] = 0;
-        if (m_pos_ml == 509) { log_e("metaline overflow in AUDIO_METADATA! metaline=%s", m_buffer); }
-        if (m_pos_ml == 510) { ; /* last current char in b */}
+        Serial.println("Meta: byte:" + String(b, HEX));
+
+        m_buffer[m_index] = (char) b;                        // Put new char in +++++
+        m_index++;
+
+//        m_buffer[m_index] = 0;
+//        if (m_index == 509) { log_e("metaline overflow in AUDIO_METADATA! metaline=%s", m_buffer); }
+//        if (m_index == 510) { ; /* last current char in b */}
 
     }
-    m_metalen--;
-    if (m_metalen == 0) {
-        if (strlen(m_buffer) > 0) {                        // Any info present?
+    
+    m_datalen--;
+    if (m_datalen == 0) {
+        m_buffer[m_index] = '\0';
+        if (strlen(m_buffer) > 0) {                     // Any info present?
             // metaline contains artist and song name.  For example:
             // "StreamTitle='Don McLean - American Pie';StreamUrl='';"
             // Sometimes it is just other info like:
@@ -53,6 +65,8 @@ bool MetaDataDecoder::addData(uint8_t b)
 
             Serial.print("Meta:");
             Serial.println(m_buffer);
+            Serial.print("Heap:");
+            Serial.println(String(ESP.getFreeHeap()));
 
 //            if (!m_f_localfile) 
 //                showstreamtitle(chbuf);   // Show artist and title if present in metadata

@@ -105,20 +105,19 @@ size_t bigEndian(uint8_t* base, uint8_t numBytes, uint8_t shiftLeft) {
     }
     return result;
 }
-bool b64encode(const char* source, uint16_t sourceLength, char* dest) {
+
+char* b64encode(const char* source, uint16_t sourceLength) {
     size_t size = base64_encode_expected_len(sourceLength) + 1;
-    char * buffer = (char *) malloc(size);
-    if(buffer) {
-        base64_encodestate _state;
-        base64_init_encodestate(&_state);
-        int len = base64_encode_block(&source[0], sourceLength, &buffer[0], &_state);
-        len = base64_encode_blockend((buffer + len), &_state);
-        memcpy(dest, buffer, strlen(buffer));
-        dest[strlen(buffer)] = '\0';
-        free(buffer);
-        return true;
+    char* buffer = (char *) malloc(size);
+    if (buffer == NULL) {
+        return NULL;
     }
-    return false;
+
+    base64_encodestate _state;
+    base64_init_encodestate(&_state);
+    int len = base64_encode_block(source, sourceLength, buffer, &_state);
+    len = base64_encode_blockend((buffer + len), &_state);
+    return buffer;
 }
 
 size_t urlencode_expected_len(const char* source) {
@@ -135,35 +134,35 @@ void urlencode(char* buff, uint16_t buffLen, bool spacesOnly) {
 
     uint16_t len = strlen(buff);
     uint8_t* tmpbuff = (uint8_t*)malloc(buffLen);
-    if(!tmpbuff) {log_e("out of memory"); return;}
+    if (!tmpbuff) { log_e("out of memory"); return; }
     char c;
     char code0;
     char code1;
     uint16_t j = 0;
-    for(int i = 0; i < len; i++) {
+    for (int i = 0; i < len; i++) {
         c = buff[i];
-        if(isalnum(c)) tmpbuff[j++] = c;
-        else if(spacesOnly){
-            if(c == ' '){
+        if (isalnum(c)) tmpbuff[j++] = c;
+        else if(spacesOnly) {
+            if (c == ' ') {
                 tmpbuff[j++] = '%';
                 tmpbuff[j++] = '2';
                 tmpbuff[j++] = '0';
             }
-            else{
+            else {
                 tmpbuff[j++] = c;
             }
         }
         else {
             code1 = (c & 0xf) + '0';
-            if((c & 0xf) > 9) code1 = (c & 0xf) - 10 + 'A';
+            if ((c & 0xf) > 9) code1 = (c & 0xf) - 10 + 'A';
             c = (c >> 4) & 0xf;
             code0 = c + '0';
-            if(c > 9) code0 = c - 10 + 'A';
+            if (c > 9) code0 = c - 10 + 'A';
             tmpbuff[j++] = '%';
             tmpbuff[j++] = code0;
             tmpbuff[j++] = code1;
         }
-        if(j == buffLen - 1){
+        if (j == buffLen - 1) {
             log_e("out of memory");
             break;
         }

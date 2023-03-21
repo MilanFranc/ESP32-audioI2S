@@ -19,6 +19,12 @@
 
 #include <driver/i2s.h>
 
+#include "AudioBuffer.h"
+#include "AudioFilter.h"
+#include "AudioPlaylist.h"
+#include "MetaDataDecoder.h"
+
+
 #ifndef AUDIO_NO_SD_FS
 #include <SPI.h>
 #ifdef SDFATFS_USED
@@ -30,11 +36,6 @@
 #include <FS.h>
 #include <FFat.h>
 #endif // SDFATFS_USED
-
-#include "AudioBuffer.h"
-#include "AudioFilter.h"
-#include "AudioPlaylist.h"
-#include "MetaDataDecoder.h"
 
 #ifdef SDFATFS_USED
 //typedef File32 File;
@@ -97,27 +98,36 @@ public:
     Audio(bool internalDAC = false, uint8_t channelEnabled = 3, uint8_t i2sPort = I2S_NUM_0); // #99
     ~Audio();
     void setBufsize(int rambuf_sz, int psrambuf_sz);
+    bool setPinout(uint8_t BCLK, uint8_t LRC, uint8_t DOUT, int8_t DIN = I2S_PIN_NO_CHANGE);
+
+    void forceMono(bool m);
+    void setBalance(int8_t bal = 0);
+    void setVolume(uint8_t vol);
+    uint8_t getVolume();
+
+    void setConnectionTimeout(uint16_t timeout_ms, uint16_t timeout_ms_ssl);
+
+
     bool connecttohost(const char* host, const char* user = "", const char* pwd = "");
+
+#ifndef AUDIO_NO_SPEECH_ENGINE    
     bool connecttospeech(const char* speech, const char* lang);
+#endif    
 #ifndef AUDIO_NO_SD_FS
     bool connecttoFS(fs::FS &fs, const char* path, uint32_t resumeFilePos = 0);
     bool connecttoSD(const char* path, uint32_t resumeFilePos = 0);
 #endif                           // AUDIO_NO_SD_FS
     bool setFileLoop(bool input);//TEST loop
-    void setConnectionTimeout(uint16_t timeout_ms, uint16_t timeout_ms_ssl);
     bool setAudioPlayPosition(uint16_t sec);
     bool setFilePos(uint32_t pos);
     bool audioFileSeek(const float speed);
     bool setTimeOffset(int sec);
-    bool setPinout(uint8_t BCLK, uint8_t LRC, uint8_t DOUT, int8_t DIN=I2S_PIN_NO_CHANGE);
-    bool pauseResume();
-    bool isRunning() {return m_f_running;}
+
     void loop();
+    bool isRunning() const { return m_f_running; }
+    bool pauseResume();
+
     uint32_t stopSong();
-    void forceMono(bool m);
-    void setBalance(int8_t bal = 0);
-    void setVolume(uint8_t vol);
-    uint8_t getVolume();
 	uint8_t getI2sPort();
 
     uint32_t getAudioDataStartPos();
@@ -150,7 +160,7 @@ private:
 #endif // AUDIO_NO_SD_FS
     void processWebStream();
     void processM3U8entries(uint8_t nrOfEntries = 0, uint32_t seqNr = 0, uint8_t pos = 0, uint16_t targetDuration = 0);
-    bool STfromEXTINF(char* str);
+    //bool STfromEXTINF(char* str);
     void showCodecParams();
     int  findNextSync(uint8_t* data, size_t len);
     int  sendBytes(uint8_t* data, size_t len);
